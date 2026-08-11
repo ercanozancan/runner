@@ -1,0 +1,41 @@
+name: fetch
+
+on:
+  schedule:
+    - cron: "3,13,23,33,43,53 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: pipeline
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.DATA_REPO }}
+          token: ${{ secrets.REPO_PAT }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: deps
+        run: pip -q install requests requests_oauthlib
+
+      - name: run
+        env:
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
+        run: python scripts/fetch_and_post.py fetch
+
+      - name: save
+        run: |
+          git config user.name "scanner-bot"
+          git config user.email "scanner-bot@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "fetch: $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git pull --rebase origin main || true
+          git push

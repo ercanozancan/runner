@@ -12,7 +12,7 @@ concurrency:
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,7 +26,7 @@ jobs:
       - name: deps
         run: pip -q install requests requests_oauthlib
 
-      # Kuyrukta kartli (card alani olan) bekleyen post var mi? Yoksa Playwright kurma, zaman kaybetme.
+      # Kuyrukta kartli (card alani olan) bekleyen post var mi? Yoksa Playwright kurma.
       - name: card check
         id: chk
         run: |
@@ -38,18 +38,15 @@ jobs:
           print(f"need={'true' if need else 'false'}")
           PY
 
-      - name: playwright cache
-        if: steps.chk.outputs.need == 'true'
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: pw-chromium-${{ runner.os }}-v1
-
+      # Runner'daki sistem Chrome'u kullanilir (render_card channel="chrome"); tarayici indirilmez.
+      # Chrome yoksa (imaj degisirse) Playwright Chromium'u kurulur.
       - name: playwright
         if: steps.chk.outputs.need == 'true'
         run: |
           pip -q install playwright
-          python -m playwright install --with-deps chromium
+          if ! command -v google-chrome >/dev/null 2>&1; then
+            python -m playwright install --with-deps chromium
+          fi
 
       - name: run
         env:

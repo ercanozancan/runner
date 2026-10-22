@@ -12,7 +12,7 @@ concurrency:
 jobs:
   post:
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,6 +25,31 @@ jobs:
 
       - name: deps
         run: pip -q install requests requests_oauthlib
+
+      # Kuyrukta kartli (card alani olan) bekleyen post var mi? Yoksa Playwright kurma, zaman kaybetme.
+      - name: card check
+        id: chk
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          try: q = json.load(open("queue/approved.json", encoding="utf-8"))
+          except Exception: q = []
+          need = any(p.get("status") == "pending" and isinstance(p.get("card"), dict) for p in q)
+          print(f"need={'true' if need else 'false'}")
+          PY
+
+      - name: playwright cache
+        if: steps.chk.outputs.need == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-chromium-${{ runner.os }}-v1
+
+      - name: playwright
+        if: steps.chk.outputs.need == 'true'
+        run: |
+          pip -q install playwright
+          python -m playwright install --with-deps chromium
 
       - name: run
         env:

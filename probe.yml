@@ -1,0 +1,37 @@
+name: probe-fotmob
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: fetch
+        shell: python
+        run: |
+          import urllib.request, re, json, sys
+          UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36"
+          def get(u):
+              r = urllib.request.Request(u, headers={"User-Agent": UA, "Accept": "text/html,*/*", "Accept-Language": "en-US,en;q=0.9"})
+              with urllib.request.urlopen(r, timeout=30) as x: return x.status, x.read().decode("utf-8", "ignore")
+          ok = True
+          for name, u in [("team", "https://www.fotmob.com/teams/8637/fixtures/galatasaray"),
+                          ("match", "https://www.fotmob.com/matches/galatasaray-vs-lille/2guw05#6106312")]:
+              try:
+                  st, html = get(u)
+                  m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html, re.S)
+                  d = json.loads(m.group(1)) if m else None
+                  pp = d["props"]["pageProps"] if d else {}
+                  if name == "team":
+                      fb = pp.get("fallback", {}); k = next((x for x in fb if x.startswith("team-")), None)
+                      n = len(fb[k]["fixtures"]["allFixtures"]["fixtures"]) if k else 0
+                      print(f"{name}: HTTP {st}, {len(html)} B, nextdata={bool(d)}, fixtures={n}"); ok &= n > 0
+                  else:
+                      ps = pp.get("content", {}).get("playerStats", {})
+                      fin = pp.get("general", {}).get("finished")
+                      print(f"{name}: HTTP {st}, {len(html)} B, nextdata={bool(d)}, players={len(ps)}, finished={fin}"); ok &= len(ps) > 0
+              except Exception as e:
+                  print(f"{name}: HATA {type(e).__name__}: {str(e)[:200]}"); ok = False
+          sys.exit(0 if ok else 1)

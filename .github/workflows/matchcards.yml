@@ -1,0 +1,51 @@
+name: matchcards
+
+on:
+  schedule:
+    - cron: "4,34 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: "1 = sadece raporla, dosya yazma"
+        default: "0"
+      window_h:
+        description: "kac saat geriye bak"
+        default: "8"
+      min_rating:
+        description: "puan esigi"
+        default: "7.0"
+
+concurrency:
+  group: pipeline
+  cancel-in-progress: false
+
+jobs:
+  cards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.DATA_REPO }}
+          token: ${{ secrets.REPO_PAT }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: run
+        env:
+          MC_DRY: ${{ github.event.inputs.dry || '0' }}
+          MC_WINDOW_H: ${{ github.event.inputs.window_h || '8' }}
+          MC_MIN_RATING: ${{ github.event.inputs.min_rating || '7.0' }}
+        run: python scripts/matchcards.py
+
+      - name: save
+        if: ${{ (github.event.inputs.dry || '0') != '1' }}
+        run: |
+          git config user.name "scanner-bot"
+          git config user.email "scanner-bot@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "matchcards: $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git pull --rebase origin main || true
+          git push

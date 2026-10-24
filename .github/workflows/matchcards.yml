@@ -14,6 +14,9 @@ on:
       min_rating:
         description: "puan esigi"
         default: "7.0"
+      preview:
+        description: "onizleme uret (weekly) — kuyruga yazmaz, data/preview/ altina commit eder"
+        default: ""
 
 concurrency:
   group: pipeline
@@ -22,7 +25,7 @@ concurrency:
 jobs:
   cards:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,11 +36,16 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: deps (preview)
+        if: ${{ github.event.inputs.preview != '' }}
+        run: pip -q install playwright imageio-ffmpeg
+
       - name: run
         env:
           MC_DRY: ${{ github.event.inputs.dry || '0' }}
           MC_WINDOW_H: ${{ github.event.inputs.window_h || '8' }}
           MC_MIN_RATING: ${{ github.event.inputs.min_rating || '7.0' }}
+          MC_PREVIEW: ${{ github.event.inputs.preview || '' }}
         run: python scripts/matchcards.py
 
       - name: save

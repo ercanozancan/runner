@@ -43,7 +43,7 @@ jobs:
       - name: playwright
         if: steps.chk.outputs.need == 'true'
         run: |
-          pip -q install playwright
+          pip -q install playwright imageio-ffmpeg
           if ! command -v google-chrome >/dev/null 2>&1; then
             python -m playwright install --with-deps chromium
           fi

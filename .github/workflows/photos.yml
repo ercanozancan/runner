@@ -1,26 +1,28 @@
 name: photos
 
-# Oyuncu fotoğrafı kesme: private repo assets/card/players_hq_raw/ içine attığın ham fotoğrafların arka planını
-# kaldırıp assets/card/players_hq/<ayni-ad>.png olarak yazar. Elle (Run workflow) ya da günde bir kez çalışır.
-# Dosya adı: <fotmob id>.jpg ya da ad-soyad.jpg (varyant: ad-soyad_2.jpg). Bkz. players_hq/README.md
+# Oyuncu fotoğrafı kataloğu: assets/card/players_hq_raw/ içine attığın ham fotoğrafları keser (players_hq/auto/),
+# Claude vision ile inceleyip etiketler (sahne, yüz yönü, forma, başka oyuncu var mı, netlik) ve kart türüne göre puanlar
+# → players_hq/catalog.json + players_hq/_index.png. Kartlar fotoğrafı bu katalogdan kendisi seçer.
+# Dosya adında yalnızca oyuncunun adı/soyadı yeterli (mbappe.jpg, mbappe_7.jpg). Her 30 dk + elle çalışır;
+# yeni fotoğraf yoksa ~20 sn'de çıkar, hiçbir şey kurmaz.
 
 on:
   schedule:
-    - cron: "17 3 * * *"
+    - cron: "12,42 * * * *"
   workflow_dispatch:
     inputs:
       commons:
-        description: "Wikimedia Commons: 'scan' = aday listesi (data/preview/commons.json), ya da secim 'arda-guler:0,kenan-yildiz:2'"
+        description: "Wikimedia Commons: 'scan' = aday listesi, ya da secim 'arda-guler:0'"
         default: ""
 
 concurrency:
-  group: pipeline
+  group: photos
   cancel-in-progress: false
 
 jobs:
   cut:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,8 +33,26 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: yeni fotoğraf var mı
+        id: chk
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, hashlib, pathlib
+          card = pathlib.Path("assets/card"); raw = card/"players_hq_raw"; hq = card/"players_hq"
+          cat = json.loads((hq/"catalog.json").read_text()) if (hq/"catalog.json").exists() else {}
+          fs = [f for f in list(raw.glob("*")) + list(hq.glob("*.png")) if f.suffix.lower() in (".jpg",".jpeg",".png",".webp") and not f.name.startswith("_")]
+          def stale(f):
+              e = cat.get(str(f.relative_to(card))) or {}
+              return e.get("sha1") != hashlib.sha1(f.read_bytes()).hexdigest() or not e.get("vision")
+          new = [f for f in fs if stale(f)]
+          gone = set(cat) - {str(f.relative_to(card)) for f in fs}
+          print(f"need={'true' if (new or gone) else 'false'}")
+          PY
+          cat "$GITHUB_OUTPUT"
+
       - name: deps
-        run: pip -q install pillow rembg onnxruntime
+        if: steps.chk.outputs.need == 'true' || github.event.inputs.commons != ''
+        run: pip -q install pillow rembg onnxruntime scipy numpy
 
       - name: commons
         if: ${{ github.event.inputs.commons != '' }}
@@ -40,14 +60,18 @@ jobs:
           COMMONS_PICK: ${{ github.event.inputs.commons != 'scan' && github.event.inputs.commons || '' }}
         run: python scripts/commons_photos.py
 
-      - name: cut
-        run: python scripts/cutout.py
+      - name: catalog
+        if: steps.chk.outputs.need == 'true' || github.event.inputs.commons != ''
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PHOTO_MODEL: ${{ vars.PHOTO_MODEL || 'claude-sonnet-5-5' }}
+        run: python scripts/photo_catalog.py
 
       - name: save
+        if: steps.chk.outputs.need == 'true' || github.event.inputs.commons != ''
         run: |
           git config user.name "scanner-bot"
           git config user.email "scanner-bot@users.noreply.github.com"
           git add -A
-          git diff --cached --quiet || git commit -m "photos: kesme $(date -u +'%Y-%m-%d %H:%M UTC')"
-          git pull --rebase origin main || true
-          git push
+          git diff --cached --quiet || git commit -m "photos: katalog $(date -u +'%Y-%m-%d %H:%M UTC')"
+          for i in 1 2 3; do git pull --rebase origin main && git push && break; sleep 5; done

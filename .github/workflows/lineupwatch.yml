@@ -1,9 +1,11 @@
 name: lineupwatch
 
-# Hızlı kadro bekçisi (26 Eki): clock.yml her 10 dk'da bir (:x2) tetikler. Maça ≤ 75 dk kala resmî ilk 11'i
-# 2 dk'da bir yoklar (FotMob JSON API + ESPN), ~8,5 dk döner. Resmî kadro görünce matchcards.yml'i tetikler,
-# bitmesini bekler, ardından post.yml'i tetikler. Kadrosu beklenen maç yoksa ~20 sn'de çıkar.
-# Dosyaya yazmaz: kartı matchcards.yml üretir ("pipeline" sırası korunur, çakışma olmaz).
+# Kadro bekçisi + canlı maç + otomatik gol kartı (v2, 26 Eki). clock.yml her 10 dk'da bir (:x2) tetikler, ~9,3 dk döner.
+# - Maça ≤ 75 dk kala resmî ilk 11'i 2 dk'da bir yoklar (FotMob JSON API + ESPN); görünce matchcards.yml + post.yml'i tetikler.
+# - İzlenen takım/oyuncu maçı canlıyken FotMob verisini 20 sn'de bir 'live' dalına yazar.
+# - Gol maç başlığında ≥40 sn durunca (VAR güvenliği) gol kartını çizip X'e DOĞRUDAN paylaşır (kullanıcı onayı: gol haberleri onaysız).
+#   Türk kulübü / millî takım maçında iki takımın golleri; oyuncu takibinde yalnızca izlenen oyuncunun golü. Kendi kalesine gol paylaşılmaz.
+# Ana dala yazmaz (kayıt live dalındaki goals.json'da) → "pipeline" işleriyle çakışmaz.
 
 on:
   workflow_dispatch: {}
@@ -33,10 +35,22 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Gol kartı çizimi için: runner'daki sistem Chrome'u kullanılır (render_card channel="chrome"); yoksa Chromium kurulur.
+      - name: deps
+        run: |
+          pip -q install requests requests_oauthlib playwright
+          if ! command -v google-chrome >/dev/null 2>&1; then python -m playwright install --with-deps chromium; fi
+
       - name: bekle
         id: w
         env:
           MC_LINEUP_WATCH: "1"
+          MC_GOAL_POST: "1"
+          X_API_KEY: ${{ secrets.X_API_KEY }}
+          X_API_SECRET: ${{ secrets.X_API_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_SECRET: ${{ secrets.X_ACCESS_SECRET }}
+          X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
         run: python scripts/matchcards.py
 
       - name: kart üret + paylaş

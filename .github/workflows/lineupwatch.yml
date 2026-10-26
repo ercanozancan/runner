@@ -1,0 +1,50 @@
+name: lineupwatch
+
+# Hızlı kadro bekçisi (26 Eki): clock.yml her 10 dk'da bir (:x2) tetikler. Maça ≤ 75 dk kala resmî ilk 11'i
+# 2 dk'da bir yoklar (FotMob JSON API + ESPN), ~8,5 dk döner. Resmî kadro görünce matchcards.yml'i tetikler,
+# bitmesini bekler, ardından post.yml'i tetikler. Kadrosu beklenen maç yoksa ~20 sn'de çıkar.
+# Dosyaya yazmaz: kartı matchcards.yml üretir ("pipeline" sırası korunur, çakışma olmaz).
+
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: lineupwatch
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.DATA_REPO }}
+          token: ${{ secrets.REPO_PAT }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: bekle
+        id: w
+        env:
+          MC_LINEUP_WATCH: "1"
+        run: python scripts/matchcards.py
+
+      - name: kart üret + paylaş
+        if: steps.w.outputs.ready == '1'
+        run: |
+          gh workflow run matchcards.yml -R "$REPO"
+          sleep 10
+          id=$(gh run list -R "$REPO" -w matchcards.yml -L 1 --json databaseId -q '.[0].databaseId')
+          echo "matchcards run: $id"
+          gh run watch "$id" -R "$REPO" --interval 10 > /dev/null || true
+          gh workflow run post.yml -R "$REPO" && echo "post.yml tetiklendi"

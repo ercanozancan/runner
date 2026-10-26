@@ -1,6 +1,6 @@
 name: clock
 
-# Ana saat (v3). GitHub'ın cron'u güvenilmez (25 Eki: fetch cron'u 15 saatte 1 kez ateşlendi);
+# Ana saat (v4, 26 Eki: +lineupwatch :x2). GitHub'ın cron'u güvenilmez (25 Eki: fetch cron'u 15 saatte 1 kez ateşlendi);
 # eskiden bu işi Mac'teki launchd yapıyordu. Bu workflow ~5 saat 50 dk döner: her 10 dk fetch.yml'i,
 # her 10 dk matchcards.yml'i tetikler, bitmeden kendini yeniden başlatır (zincir).
 # Zincir koparsa (GitHub kesintisi, elle iptal) saat başı cron ya da "Run workflow" yeniden başlatır;
@@ -45,7 +45,8 @@ jobs:
             i=$((i+1))
             fire fetch.yml                                        # :x0 fetch + editoryal (kuyruğa post girerse post.yml'i kendisi tetikler)
             sleep 60; fire matchcards.yml                        # :x1 her 10 dk (kadro kartları açıklanır açıklanmaz; sayfa önbelleği var)
-            sleep 240; fire post.yml                              # :x5 kuyruk boşsa 30 sn'de biter; matchcards kartlarını atar
+            sleep 60; fire lineupwatch.yml                        # :x2 kadro bekçisi: maça ≤75 dk kala 2 dk'da bir yoklar (yoksa ~20 sn'de çıkar)
+            sleep 180; fire post.yml                              # :x5 kuyruk boşsa 30 sn'de biter; matchcards kartlarını atar
           done
 
       - name: restart chain

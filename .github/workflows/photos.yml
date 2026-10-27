@@ -3,7 +3,8 @@ name: photos
 # Oyuncu fotoğrafı kataloğu: assets/card/players_hq_raw/ içine attığın ham fotoğrafları keser (players_hq/auto/),
 # Claude vision ile inceleyip etiketler (sahne, yüz yönü, forma, başka oyuncu var mı, netlik) ve kart türüne göre puanlar
 # → players_hq/catalog.json + players_hq/_index.png. Kartlar fotoğrafı bu katalogdan kendisi seçer.
-# Dosya adında yalnızca oyuncunun adı/soyadı yeterli (mbappe.jpg, mbappe_7.jpg). Her 30 dk + elle çalışır;
+# Dosya adında yalnızca oyuncunun adı/soyadı yeterli (mbappe.jpg, mbappe_7.jpg). İşlenenler players_hq_raw/islendi/ altına taşınır;
+# ana klasörde kalanlar = henüz işlenmemişler. Aynı adla yeni yükleme işlenmişin üzerine yazmaz, _2/_3 ekiyle yeniden adlandırılır. Her 30 dk + elle çalışır;
 # yeni fotoğraf yoksa ~20 sn'de çıkar, hiçbir şey kurmaz.
 
 on:
@@ -35,19 +36,9 @@ jobs:
 
       - name: yeni fotoğraf var mı
         id: chk
+        # 27 Eki: kontrol betikte (scripts/photo_check.py) — ana klasörde görsel varsa ya da islendi/ katalogla uyuşmuyorsa need=true
         run: |
-          python - <<'PY' >> "$GITHUB_OUTPUT"
-          import json, hashlib, pathlib
-          card = pathlib.Path("assets/card"); raw = card/"players_hq_raw"; hq = card/"players_hq"
-          cat = json.loads((hq/"catalog.json").read_text()) if (hq/"catalog.json").exists() else {}
-          fs = [f for f in list(raw.glob("*")) + list(hq.glob("*.png")) if f.suffix.lower() in (".jpg",".jpeg",".png",".webp") and not f.name.startswith("_")]
-          def stale(f):
-              e = cat.get(str(f.relative_to(card))) or {}
-              return e.get("sha1") != hashlib.sha1(f.read_bytes()).hexdigest() or not e.get("vision")
-          new = [f for f in fs if stale(f)]
-          gone = set(cat) - {str(f.relative_to(card)) for f in fs}
-          print(f"need={'true' if (new or gone) else 'false'}")
-          PY
+          python scripts/photo_check.py >> "$GITHUB_OUTPUT"
           cat "$GITHUB_OUTPUT"
 
       - name: deps
